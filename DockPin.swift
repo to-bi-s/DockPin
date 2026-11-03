@@ -668,10 +668,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(status)
         menu.addItem(.separator())
 
-        for screen in NSScreen.screens {
+        for (i, screen) in NSScreen.screens.enumerated() {
             let name = screen.localizedName
-            let item = NSMenuItem(title: name,
-                                  action: #selector(selectScreen(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: name, action: #selector(selectScreen(_:)),
+                                  keyEquivalent: i < 9 ? String(i + 1) : "")   // ⌘1 … ⌘9
             item.target = self
             item.representedObject = name
             item.state = name == pin.pinnedName ? .on : .off
@@ -679,7 +679,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(.separator())
 
-        let info = NSMenuItem(title: "Info", action: #selector(openInfo), keyEquivalent: "")
+        let info = NSMenuItem(title: "Info", action: #selector(openInfo), keyEquivalent: "i")
         info.target = self
         menu.addItem(info)
         menu.addItem(.separator())
@@ -736,22 +736,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 final class StatusToggleView: NSView {
     private let dotView = NSImageView(frame: NSRect(x: 11, y: 3, width: 16, height: 16))
     private let label = NSTextField(labelWithString: "")
+    private let versionLabel = NSTextField(labelWithString: "")
+    private var active = false
     var onToggle: (() -> Bool)?
 
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: 220, height: 22))
         autoresizingMask = [.width]
-        label.frame = NSRect(x: 29, y: 3, width: 180, height: 16)
+        label.frame = NSRect(x: 29, y: 3, width: 150, height: 16)
         label.font = NSFont.menuFont(ofSize: 0)
         label.textColor = .labelColor
-        label.autoresizingMask = [.width]
         addSubview(dotView)
         addSubview(label)
+        // VoiceOver: the row is one button; its parts are not separate elements
+        dotView.setAccessibilityElement(false)
+        label.setAccessibilityElement(false)
+        versionLabel.setAccessibilityElement(false)
+
+        // version, top right, in gray and one size smaller, on the same baseline as the title
+        let menuSize = NSFont.menuFont(ofSize: 0).pointSize
+        versionLabel.stringValue = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        versionLabel.font = NSFont.menuFont(ofSize: menuSize - 2)
+        versionLabel.textColor = .secondaryLabelColor
+        versionLabel.alignment = .right
+        versionLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(versionLabel)
+        NSLayoutConstraint.activate([
+            versionLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            versionLabel.firstBaselineAnchor.constraint(equalTo: label.firstBaselineAnchor),
+        ])
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     func render(active: Bool) {
+        self.active = active
         dotView.image = AppDelegate.statusDot(active ? NSColor(red: 48/255, green: 182/255, blue: 69/255, alpha: 1)
                                                      : NSColor(red: 255/255, green: 74/255, blue: 62/255, alpha: 1))
         label.stringValue = "DockPin \(active ? "active" : "inactive")"
@@ -759,6 +778,22 @@ final class StatusToggleView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         if let toggle = onToggle { render(active: toggle()) }
+    }
+
+    // MARK: accessibility (VoiceOver reads the row as a button and can press it)
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityLabel() -> String? {
+        "\(label.stringValue), version \(versionLabel.stringValue)"
+    }
+    override func accessibilityHelp() -> String? {
+        active ? "Pauses DockPin" : "Resumes DockPin"
+    }
+    override func accessibilityPerformPress() -> Bool {
+        guard let toggle = onToggle else { return false }
+        render(active: toggle())
+        return true
     }
 }
 
