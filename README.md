@@ -20,9 +20,9 @@ By supporting me a with a tip, you encourage me to keep my apps up to date and r
 
 My gratitude for your donation will include:
 
-- for 5€ or more: Proof of your amazingness - Unlocks the Pro version of my app\
-- for 10€ or more: 1 Premium Support Ticket - Whenever you have an issue with my app, I will fix it for you\
-- for 20€ or more: 1 Feature Request for any of my apps\
+- for 5€ or more: Proof of your amazingness - Unlocks the Pro version of my app
+- for 10€ or more: 1 Premium Support Ticket - Whenever you have an issue with my app, I will fix it for you
+- for 20€ or more: 1 Feature Request for any of my apps
 
 Thank You & Stay Amazing ❤️
 
