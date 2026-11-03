@@ -37,7 +37,7 @@ cd DockPin
 ./install.sh
 ```
 
-`install.sh` copies the app to `~/Applications`, starts it, and registers it as a login item.
+`install.sh` copies the app to `/Applications`, starts it, and registers it as a login item.
 macOS then asks for **Accessibility** access — grant it; DockPin starts working the moment you do.
 
 To remove it: choose **Quit** in the menu (that restores your display arrangement), then

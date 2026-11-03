@@ -37,6 +37,8 @@ private let physicalOriginsKey = "PhysicalOrigins"
 private let pinnedNameKey = "PinnedDisplayName"
 private let pinnedSelectionKey = "PinnedSelection"
 private let appliedOrientationKey = "AppliedOrientation"
+private let proUnlockedKey = "ProUnlocked"
+private let proPassword = "YouAreAmazing:)"
 
 // Removed from the Swift SDK but still exported by CoreGraphics. Zeroing the
 // interval removes the brief input stall that follows CGWarpMouseCursorPosition,
@@ -651,8 +653,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // and text re-render in place. Dot x matches the state column, text x
         // matches the other rows' titles.
         let status = NSMenuItem(title: "DockPin status", action: nil, keyEquivalent: "")
+        let pro = UserDefaults.standard.bool(forKey: proUnlockedKey)
         let row = StatusToggleView()
-        row.render(active: active)
+        row.render(active: active, pro: pro)
         row.onToggle = { [weak self] in
             guard let self = self else { return false }
             self.pin.paused.toggle()
@@ -682,6 +685,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let info = NSMenuItem(title: "Info", action: #selector(openInfo), keyEquivalent: "i")
         info.target = self
         menu.addItem(info)
+        let unlock = NSMenuItem(title: pro ? "You Are Amazing ❤️" : "Unlock Pro Version",
+                                action: pro ? nil : #selector(unlockPro), keyEquivalent: pro ? "" : "u")
+        unlock.target = self
+        menu.addItem(unlock)
         menu.addItem(.separator())
 
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
@@ -695,6 +702,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pin.clearBackoff()
         pin.refresh()   // resets the old arrangement and applies the new one
         updateInfo()
+    }
+
+    @objc private func unlockPro() {
+        let alert = NSAlert()
+        alert.messageText = "Unlock Pro Version"
+        alert.informativeText = "Enter the password from your support confirmation."
+        alert.addButton(withTitle: "Unlock")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        if field.stringValue == proPassword {
+            UserDefaults.standard.set(true, forKey: proUnlockedKey)
+            NSLog("DockPin: Pro unlocked")
+        } else {
+            let wrong = NSAlert()
+            wrong.messageText = "That's not it"
+            wrong.informativeText = "The password didn't match. Check your support confirmation and try again."
+            wrong.runModal()
+        }
     }
 
     @objc private func openInfo() {
@@ -737,7 +766,9 @@ final class StatusToggleView: NSView {
     private let dotView = NSImageView(frame: NSRect(x: 11, y: 3, width: 16, height: 16))
     private let label = NSTextField(labelWithString: "")
     private let versionLabel = NSTextField(labelWithString: "")
+    private let proBadge = NSTextField(labelWithString: " PRO ")
     private var active = false
+    private var pro = false
     var onToggle: (() -> Bool)?
 
     init() {
@@ -759,18 +790,35 @@ final class StatusToggleView: NSView {
         versionLabel.font = NSFont.menuFont(ofSize: menuSize - 2)
         versionLabel.textColor = .secondaryLabelColor
         versionLabel.alignment = .right
-        versionLabel.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(versionLabel)
+
+        // "PRO" pill right of the version, shown once unlocked
+        proBadge.font = NSFont.systemFont(ofSize: menuSize - 4, weight: .semibold)
+        proBadge.textColor = .white
+        proBadge.drawsBackground = true
+        proBadge.backgroundColor = .controlAccentColor
+        proBadge.wantsLayer = true
+        proBadge.layer?.cornerRadius = 3
+        proBadge.layer?.masksToBounds = true
+        proBadge.isHidden = true
+
+        let trailing = NSStackView(views: [versionLabel, proBadge])
+        trailing.orientation = .horizontal
+        trailing.alignment = .firstBaseline
+        trailing.spacing = 6
+        trailing.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(trailing)
         NSLayoutConstraint.activate([
-            versionLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            versionLabel.firstBaselineAnchor.constraint(equalTo: label.firstBaselineAnchor),
+            trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            trailing.firstBaselineAnchor.constraint(equalTo: label.firstBaselineAnchor),
         ])
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func render(active: Bool) {
+    func render(active: Bool, pro: Bool? = nil) {
         self.active = active
+        if let pro = pro { self.pro = pro }
+        proBadge.isHidden = !self.pro
         dotView.image = AppDelegate.statusDot(active ? NSColor(red: 48/255, green: 182/255, blue: 69/255, alpha: 1)
                                                      : NSColor(red: 255/255, green: 74/255, blue: 62/255, alpha: 1))
         label.stringValue = "DockPin \(active ? "active" : "inactive")"
@@ -785,7 +833,7 @@ final class StatusToggleView: NSView {
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { .button }
     override func accessibilityLabel() -> String? {
-        "\(label.stringValue), version \(versionLabel.stringValue)"
+        "\(label.stringValue), version \(versionLabel.stringValue)" + (pro ? ", Pro" : "")
     }
     override func accessibilityHelp() -> String? {
         active ? "Pauses DockPin" : "Resumes DockPin"

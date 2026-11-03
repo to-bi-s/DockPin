@@ -1,12 +1,12 @@
 #!/bin/zsh
-# Copies DockPin.app to ~/Applications and registers it as a login item (LaunchAgent).
+# Copies DockPin.app to /Applications and registers it as a login item (LaunchAgent).
 # Optional arguments are passed through to DockPin, e.g.:  ./install.sh --display "Built-in"
 set -e
 cd "$(dirname "$0")"
 
 [[ -d DockPin.app ]] || ./build.sh
 
-DEST="$HOME/Applications"
+DEST="/Applications"
 mkdir -p "$DEST"
 rm -rf "$DEST/DockPin.app"
 cp -R DockPin.app "$DEST/"

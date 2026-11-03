@@ -5,5 +5,5 @@ set -e
 LABEL="dev.tobi.DockPin"
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 rm -f "$HOME/Library/LaunchAgents/$LABEL.plist"
-rm -rf "$HOME/Applications/DockPin.app"
+rm -rf "/Applications/DockPin.app"
 echo "DockPin removed. Accessibility access can be cleared in System Settings → Privacy & Security."
