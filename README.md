@@ -1,3 +1,5 @@
+<p align="center"><img src="resources/dockpin-icon.png" width="160" alt="DockPin icon"></p>
+
 # DockPin
 
 Pins the macOS Dock to the screen of your choice — and keeps it there.
