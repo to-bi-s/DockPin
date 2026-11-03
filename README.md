@@ -13,14 +13,16 @@ picked up automatically.
 
 ## Support
 
-DockPin is free and Open Source software — and will always be. I am investing a lot of love and time into making my apps, and love to share them with the world.
-By supporting me and what I love doing with a tip, you give me a reason to keep my apps up to date and fixed, and functional in case an external dependency or system update breaks it.
+DockPin is free and Open Source software — and will always be. I am investing a lot of love and time into making my apps, and love to share them with the world.\
+By supporting me a with a tip, you encourage me to keep my apps up to date and running, and to fix in case an external dependency or system update breaks them.
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/P2U529ZTW5)
 
-5€ or more: Proof of your amazingness - Unlocks the Pro version of my app
-10€ or more: 1 Premium Support Ticket - Whenever you have an issue with my app, I will fix it for you
-20€ or more: 1 Feature Request for any of my apps
+My gratitude for your donation will include:
+
+- for 5€ or more: Proof of your amazingness - Unlocks the Pro version of my app\
+- for 10€ or more: 1 Premium Support Ticket - Whenever you have an issue with my app, I will fix it for you\
+- for 20€ or more: 1 Feature Request for any of my apps\
 
 Thank You & Stay Amazing ❤️
 
