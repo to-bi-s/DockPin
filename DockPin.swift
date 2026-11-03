@@ -3,18 +3,20 @@ import Cocoa
 // DockPin — keeps the macOS Dock on one display.
 //
 // How it works:
-// A Dock set to the left edge always rests on the display whose CENTER is
-// leftmost in the logical arrangement (verified empirically: edge positions
-// don't matter), and macOS re-derives that on every Dock launch and display
-// change. There is no API or preference to override it, and the "push the
-// pointer against the edge" gesture is detected inside WindowServer from raw
-// hardware input, so it can't be simulated either.
+// macOS chooses the Dock's display by walking the arrangement: starting at the
+// main display it steps to the display adjacent to the current one's Dock edge
+// (left, bottom or right, matching "Position on screen") until there is none,
+// and the Dock rests where the walk ends. It re-derives that on every Dock
+// launch and display change. There is no API or preference to override it, and
+// the "push the pointer against the edge" gesture is detected inside
+// WindowServer from raw hardware input, so it can't be simulated either.
 //
 // DockPin therefore fixes the arrangement instead:
 //   - If the pinned display is the main display (immovable — it anchors the
-//     coordinate space), every display whose center lies left of it is moved
-//     to the far right of the arrangement.
-//   - Otherwise the pinned display itself is moved to the far left.
+//     coordinate space), every display touching its Dock edge is moved to the
+//     opposite side of the arrangement, so the walk stops at once.
+//   - Otherwise the pinned display is placed just beyond the walk's current
+//     endpoint, so the walk ends on it.
 // Each moved display's real (physical) position is remembered, and a HID-level
 // event tap teleports the pointer through "wormholes" at the old seams —
 // pushing against an edge where a neighbor physically lives jumps the pointer
@@ -34,6 +36,7 @@ import Cocoa
 private let physicalOriginsKey = "PhysicalOrigins"
 private let pinnedNameKey = "PinnedDisplayName"
 private let pinnedSelectionKey = "PinnedSelection"
+private let appliedOrientationKey = "AppliedOrientation"
 
 // Removed from the Swift SDK but still exported by CoreGraphics. Zeroing the
 // interval removes the brief input stall that follows CGWarpMouseCursorPosition,
@@ -74,6 +77,7 @@ final class DockPin {
     private var relocating = false
     private var lastWormholeSummary = ""
     private var appliedPinnedName: String?       // in-memory: immune to stale defaults reads
+    private var appliedOrientation: String?
     private var lastConfigureAt = Date.distantPast
     private var lastMoveTarget = ""
     private var sameMoveCount = 0
@@ -144,18 +148,24 @@ final class DockPin {
         // put everything back to physical first and start from a clean slate.
         // The comparison is held in memory: a stale defaults read must never be
         // able to re-trigger this every refresh (that once strobed the displays).
+        CFPreferencesAppSynchronize("com.apple.dock" as CFString)
+        orientation = (CFPreferencesCopyAppValue("orientation" as CFString,
+                                                 "com.apple.dock" as CFString) as? String) ?? "bottom"
         if appliedPinnedName == nil {
             appliedPinnedName = UserDefaults.standard.string(forKey: pinnedNameKey) ?? pinnedName
+            appliedOrientation = UserDefaults.standard.string(forKey: appliedOrientationKey) ?? orientation
         }
-        if appliedPinnedName != pinnedName {
+        if appliedPinnedName != pinnedName || appliedOrientation != orientation {
             if !storedOrigins().isEmpty {
-                NSLog("DockPin: pinned display changed to \(pinnedName) — resetting arrangement first")
+                NSLog("DockPin: pin is now \(pinnedName) / \(orientation) edge — resetting arrangement first")
                 undoRelocations()
             }
             appliedPinnedName = pinnedName
+            appliedOrientation = orientation
             clearBackoff()
         }
         UserDefaults.standard.set(pinnedName, forKey: pinnedNameKey)
+        UserDefaults.standard.set(orientation, forKey: appliedOrientationKey)
 
         // Everything below reads display bounds; wait for them to be stable.
         guard settled else { scheduleRefresh(after: 0.6); return }
@@ -167,10 +177,6 @@ final class DockPin {
         otherBounds = ids.filter { $0 != pinnedID }.map { CGDisplayBounds($0) }
         rebuildWormholes()
         verifyDockPlacement()
-
-        CFPreferencesAppSynchronize("com.apple.dock" as CFString)
-        orientation = (CFPreferencesCopyAppValue("orientation" as CFString,
-                                                 "com.apple.dock" as CFString) as? String) ?? "bottom"
     }
 
     /// True if the Dock currently occupies the pinned display's Dock edge.
@@ -236,35 +242,88 @@ final class DockPin {
         relocatedNames = Array(storedOrigins().keys)
     }
 
-    /// Rearranges displays so the pinned one has the strictly leftmost center,
-    /// which is where a left-edge Dock rests.
+    // MARK: the Dock's walk
+
+    /// True if `b` lies just beyond `a`'s Dock edge and shares part of it.
+    private func touchesDockEdge(of a: CGRect, _ b: CGRect) -> Bool {
+        switch orientation {
+        case "left":  return abs(b.maxX - a.minX) < 2 && min(a.maxY, b.maxY) - max(a.minY, b.minY) > 1
+        case "right": return abs(b.minX - a.maxX) < 2 && min(a.maxY, b.maxY) - max(a.minY, b.minY) > 1
+        default:      return abs(b.minY - a.maxY) < 2 && min(a.maxX, b.maxX) - max(a.minX, b.minX) > 1
+        }
+    }
+
+    private func sharedEdge(_ a: CGRect, _ b: CGRect) -> CGFloat {
+        orientation == "bottom" ? min(a.maxX, b.maxX) - max(a.minX, b.minX)
+                                : min(a.maxY, b.maxY) - max(a.minY, b.minY)
+    }
+
+    /// Where macOS puts the Dock: from the main display, step to the display
+    /// touching the current one's Dock edge (the one sharing most of it when
+    /// several do) until there is none.
+    private func dockWalkEndpoint(_ displays: [(id: CGDirectDisplayID, bounds: CGRect)]) -> CGDirectDisplayID {
+        var current = CGMainDisplayID()
+        var visited: Set<CGDirectDisplayID> = [current]
+        while let cur = displays.first(where: { $0.id == current })?.bounds,
+              let next = displays.filter({ !visited.contains($0.id) && touchesDockEdge(of: cur, $0.bounds) })
+                                 .max(by: { sharedEdge(cur, $0.bounds) < sharedEdge(cur, $1.bounds) }) {
+            current = next.id
+            visited.insert(current)
+        }
+        return current
+    }
+
+    /// Origin that puts a display of size `r` just beyond `anchor`'s Dock edge, aligned with it.
+    private func beyondDockEdge(of anchor: CGRect, size r: CGRect) -> CGPoint {
+        switch orientation {
+        case "left":  return CGPoint(x: anchor.minX - r.width, y: anchor.minY)
+        case "right": return CGPoint(x: anchor.maxX, y: anchor.minY)
+        default:      return CGPoint(x: anchor.minX, y: anchor.maxY)
+        }
+    }
+
+    /// Origin on the side of the arrangement opposite the Dock edge, attached
+    /// to the display furthest that way, for a display that must stop touching
+    /// the main display's Dock edge.
+    private func oppositeSide(_ others: [CGRect], size r: CGRect) -> CGPoint {
+        switch orientation {
+        case "left":
+            let e = others.max { $0.maxX < $1.maxX }!
+            return CGPoint(x: e.maxX, y: e.minY)
+        case "right":
+            let e = others.min { $0.minX < $1.minX }!
+            return CGPoint(x: e.minX - r.width, y: e.minY)
+        default:
+            let e = others.min { $0.minY < $1.minY }!
+            return CGPoint(x: e.minX, y: e.minY - r.height)
+        }
+    }
+
+    /// Rearranges displays so the Dock's walk ends on the pinned display.
     @discardableResult
     private func relocateForPinned() -> Bool {
         guard !relocating, !quitting else { return false }
         relocatedNames = Array(storedOrigins().keys)
 
-        let pinnedBounds = CGDisplayBounds(pinnedID)
-        let others: [(id: CGDirectDisplayID, name: String, bounds: CGRect)] = NSScreen.screens.compactMap {
-            guard let id = screenID($0), id != pinnedID else { return nil }
+        let displays: [(id: CGDirectDisplayID, name: String, bounds: CGRect)] = NSScreen.screens.compactMap {
+            guard let id = screenID($0) else { return nil }
             return (id, $0.localizedName, CGDisplayBounds(id))
         }
-        guard let minOtherCenter = others.map({ $0.bounds.midX }).min(),
-              minOtherCenter <= pinnedBounds.midX + 0.5 else { return false }
+        guard displays.count > 1 else { return false }
+        let endpoint = dockWalkEndpoint(displays.map { ($0.id, $0.bounds) })
+        guard endpoint != pinnedID else { return false }
+        let pinnedBounds = CGDisplayBounds(pinnedID)
 
         if pinnedID == CGMainDisplayID() {
-            // The main display can't be moved, so send every display whose
-            // center lies left of it to the far right.
-            for other in others where other.bounds.midX <= pinnedBounds.midX + 0.5 {
-                let rightmost = ([pinnedBounds] + others.map { CGDisplayBounds($0.id) }).map { $0.maxX }.max()!
-                configureOrigin(other.id, other.name, from: other.bounds,
-                                to: CGPoint(x: rightmost, y: other.bounds.minY))
+            // The walk must stop at the main display: detach whatever touches its Dock edge.
+            for d in displays where d.id != pinnedID && touchesDockEdge(of: pinnedBounds, d.bounds) {
+                let others = displays.filter { $0.id != d.id }.map { CGDisplayBounds($0.id) }
+                configureOrigin(d.id, d.name, from: d.bounds, to: oppositeSide(others, size: d.bounds))
             }
-        } else {
-            // One move resolves everything: put the pinned display at the far left.
-            let leftmost = others.min { $0.bounds.minX < $1.bounds.minX }!
+        } else if let w = displays.first(where: { $0.id == endpoint }) {
+            // Extend the walk by one step: the pinned display goes just beyond its endpoint.
             configureOrigin(pinnedID, pinnedName, from: pinnedBounds,
-                            to: CGPoint(x: leftmost.bounds.minX - pinnedBounds.width,
-                                        y: leftmost.bounds.minY))
+                            to: beyondDockEdge(of: w.bounds, size: pinnedBounds))
         }
         return true
     }

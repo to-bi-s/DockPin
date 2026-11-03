@@ -3,9 +3,11 @@
 Pins the macOS Dock to the screen of your choice — and keeps it there.
 
 With "Displays have separate Spaces" on, macOS decides for itself which display gets the Dock
-(for a Dock on the left edge: the display whose center is furthest left), and it re-decides on
-every login and display change. If that isn't the screen you want, DockPin fixes it. Pick a screen
-from the menu bar, done.
+(it starts at the main display and walks across neighboring displays in the Dock's direction —
+left, bottom or right — until there is none), and it re-decides on every login and display change.
+If that isn't the screen you want, DockPin fixes it. Pick a screen from the menu bar, done. Works
+with the Dock on the left, bottom or right edge; changing the Dock position in System Settings is
+picked up automatically.
 
 ## Install
 

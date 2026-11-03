@@ -4,7 +4,7 @@ set -e
 cd "$(dirname "$0")"
 
 APP="DockPin.app"
-VERSION="${VERSION:-1.0.0}"
+VERSION="${VERSION:-1.0.1}"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
